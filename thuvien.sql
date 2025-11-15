@@ -24,7 +24,8 @@ CREATE TABLE Sach (
   ten_sach VARCHAR(100) NOT NULL,
   tac_gia VARCHAR(100),
   the_loai VARCHAR(50),
-  nam_xuat_ban INT
+  nam_xuat_ban INT,
+  hinhAnh TEXT
 ) ENGINE=InnoDB;
 
 -- 6.3 Bảng phụ thuộc
