@@ -11,13 +11,14 @@ import java.util.ArrayList;
 import java.util.List;
 
 // Lớp MySQLConnection sẽ được import và sử dụng từ file riêng của bạn.
-// Đã xóa lớp MySQLConnection giả (mock class) ở đây.
 
 public class PenaltyForm extends JFrame {
     private JTextField txtMaPhieuPhat, txtMaPhieuMuon, txtMaNguoiDoc, txtSoTienPhat, txtNgayLap;
     private JTextArea txtLyDo;
     private JComboBox<LoanDetail> cmbMaSach; 
     private JButton btnThem, btnSua, btnXoa, btnXem, btnLamMoi;
+    
+    private java.awt.event.FocusAdapter focusListener; // Khai báo listener
 
     // Class đại diện cho kết quả tra cứu (từ SQL)
     static class LoanDetail {
@@ -39,6 +40,26 @@ public class PenaltyForm extends JFrame {
             return maSach + " - " + tenSach + " (" + tinhTrangSach + ")";
         }
     }
+    
+    // Class đại diện cho dữ liệu Phiếu Phạt đầy đủ
+    static class PenaltyData {
+        String maPhieuMuon;
+        String maSach;
+        String maNguoiDoc;
+        String lyDoPhat;
+        double soTienPhat;
+        LocalDateTime ngayLap;
+
+        public PenaltyData(String maPhieuMuon, String maSach, String maNguoiDoc, String lyDoPhat, double soTienPhat, LocalDateTime ngayLap) {
+            this.maPhieuMuon = maPhieuMuon;
+            this.maSach = maSach;
+            this.maNguoiDoc = maNguoiDoc;
+            this.lyDoPhat = lyDoPhat;
+            this.soTienPhat = soTienPhat;
+            this.ngayLap = ngayLap;
+        }
+    }
+
 
     public PenaltyForm() {
         setTitle("📘 Quản lý Phiếu Phạt");
@@ -108,21 +129,23 @@ public class PenaltyForm extends JFrame {
         add(buttonPanel, BorderLayout.SOUTH);
 
         // --- LOGIC TRA CỨU TỰ ĐỘNG (FocusListener) ---
+        // Sẽ được kích hoạt khi ở chế độ Thêm
         txtMaPhieuMuon.addFocusListener(new FocusAdapter() {
             @Override
             public void focusLost(FocusEvent e) {
-                String maPM = txtMaPhieuMuon.getText().trim();
-                if (!maPM.isEmpty()) {
-                    // Đã thay thế hàm mock bằng hàm tra cứu DB thật
-                    lookupLoanDetails(maPM); 
-                } else {
-                    txtMaNguoiDoc.setText("");
-                    cmbMaSach.removeAllItems();
+                if (!isEditDeleteMode()) { // Chỉ chạy khi ở chế độ Thêm
+                    String maPM = txtMaPhieuMuon.getText().trim();
+                    if (!maPM.isEmpty()) {
+                        lookupLoanDetails(maPM); 
+                    } else {
+                        txtMaNguoiDoc.setText("");
+                        cmbMaSach.removeAllItems();
+                    }
                 }
             }
         });
         
-        // Sự kiện (Giữ nguyên logic chế độ của bạn)
+        // Sự kiện cho nút
         btnThem.addActionListener(e -> themPhieuPhat());
         btnLamMoi.addActionListener(e -> setAddMode());
         btnXem.addActionListener(e ->
@@ -145,7 +168,7 @@ public class PenaltyForm extends JFrame {
             }
         });
 
-        setAddMode(); // Mặc định ở chế độ Thêm
+        setAddMode(); 
     }
     
     // Kiểm tra xem đang ở chế độ Sửa/Xóa hay không
@@ -153,41 +176,74 @@ public class PenaltyForm extends JFrame {
         return btnThem.isEnabled() == false;
     }
 
+    // Gán FocusListener để tải dữ liệu khi mất focus (nhập xong ID)
+    private void attachFocusListenerForLoad() {
+        removeFocusListenerForLoad(); 
+        
+        focusListener = new FocusAdapter() {
+            @Override
+            public void focusLost(FocusEvent evt) {
+                if (isEditDeleteMode() && evt.getSource() == txtMaPhieuPhat) {
+                    loadPenaltyData(txtMaPhieuPhat.getText().trim());
+                }
+            }
+        };
+        txtMaPhieuPhat.addFocusListener(focusListener);
+    }
+    
+    // Xóa FocusListener
+    private void removeFocusListenerForLoad() {
+        if (focusListener != null) {
+            txtMaPhieuPhat.removeFocusListener(focusListener);
+            focusListener = null;
+        }
+    }
+
+
     // ====== CHUYỂN CHẾ ĐỘ THÊM/LÀM MỚI ======
     private void setAddMode() {
         txtMaPhieuPhat.setEditable(false); 
+        
+        // Mở khóa cho phép nhập tay Mã phiếu mượn/người đọc
         txtMaPhieuMuon.setEditable(true);
-        txtMaNguoiDoc.setEditable(true);
+        txtMaNguoiDoc.setEditable(false); // Mã người đọc vẫn khóa vì điền theo phiếu mượn
         cmbMaSach.setEnabled(true);
+        txtLyDo.setEditable(true);
+        txtSoTienPhat.setEditable(true);
         
         clearFieldsContent();
-        generatePenaltyID(); // Tự động sinh ID mới (Gap filling dùng SQL)
+        generatePenaltyID(); 
         
-        // Ngày lập là thời gian hiện tại
         txtNgayLap.setText(LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
         
-        // Cập nhật trạng thái nút
         btnThem.setEnabled(true);
         btnSua.setText("✏️ Sửa");
         btnXoa.setText("🗑️ Xóa");
+        
+        removeFocusListenerForLoad(); // Đảm bảo listener tải dữ liệu không chạy ở chế độ Thêm
     }
 
     // ====== CHUYỂN CHẾ ĐỘ SỬA/XÓA ======
     private void setEditDeleteMode() {
         if (!isEditDeleteMode()) {
             txtMaPhieuPhat.setEditable(true); 
-            txtMaPhieuMuon.setEditable(true); 
-            txtMaNguoiDoc.setEditable(true);
-            cmbMaSach.setEnabled(true);
             
-            clearFieldsContent();
+            // Khóa tất cả các trường khác ID, buộc phải tải dữ liệu
+            txtMaPhieuMuon.setEditable(false);
+            txtMaNguoiDoc.setEditable(false);
+            cmbMaSach.setEnabled(false);
+            txtLyDo.setEditable(false);
+            txtSoTienPhat.setEditable(false);
             txtNgayLap.setText("Không đổi khi Sửa/Xóa");
             
-            // Cập nhật trạng thái nút
+            clearFieldsContent();
+            
             btnThem.setEnabled(false);
             btnSua.setText("✅ Cập nhật");
             btnXoa.setText("❌ Xác nhận Xóa");
-            JOptionPane.showMessageDialog(this, "Đã chuyển sang chế độ SỬA/XÓA. Vui lòng nhập Mã phiếu phạt cần thao tác.");
+            JOptionPane.showMessageDialog(this, "Đã chuyển sang chế độ SỬA/XÓA. Vui lòng nhập Mã phiếu phạt cần thao tác và nhấn Tab/Enter.");
+            
+            attachFocusListenerForLoad(); // Gán listener để tải dữ liệu
         }
     }
     
@@ -201,54 +257,95 @@ public class PenaltyForm extends JFrame {
         txtNgayLap.setText("");
         cmbMaSach.removeAllItems(); 
     }
+    
+    // ====== TẢI DỮ LIỆU PHIẾU PHẠT ĐỂ SỬA/XÓA ======
+    private void loadPenaltyData(String maPP) {
+        if (maPP.isEmpty()) return;
 
-    // ===============================================
-    //               LOGIC TRA CỨU (LOOKUP) - Dùng DB thật
-    // ===============================================
+        PenaltyData data = getPenaltyDataFromDB(maPP);
 
-    /**
-     * Tra cứu thông tin Phiếu Mượn và Chi Tiết Mượn từ Database THẬT
-     */
-    private void lookupLoanDetails(String maPhieuMuon) {
-        txtMaNguoiDoc.setText("");
-        txtLyDo.setText("");
+        if (data != null) {
+            txtMaPhieuMuon.setText(data.maPhieuMuon);
+            txtMaNguoiDoc.setText(data.maNguoiDoc);
+            txtLyDo.setText(data.lyDoPhat);
+            txtSoTienPhat.setText(String.valueOf(data.soTienPhat));
+            txtNgayLap.setText(data.ngayLap.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+            
+            // Tải chi tiết sách cho ComboBox (chỉ cần Mã sách)
+            loadBookForComboBox(data.maPhieuMuon, data.maSach); 
+            
+            // Mở khóa để chỉnh sửa
+            txtMaPhieuMuon.setEditable(true);
+            cmbMaSach.setEnabled(true);
+            txtLyDo.setEditable(true);
+            txtSoTienPhat.setEditable(true);
+            
+            JOptionPane.showMessageDialog(this, "✅ Đã tải thông tin phiếu phạt " + maPP + ". Bạn có thể chỉnh sửa.");
+
+        } else {
+            clearFieldsContent();
+            txtMaPhieuPhat.setText(maPP);
+            txtNgayLap.setText("Không đổi khi Sửa/Xóa");
+            JOptionPane.showMessageDialog(this, "❌ Không tìm thấy phiếu phạt với Mã: " + maPP, "Lỗi", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+    
+    // Hàm mới để tải Mã sách hiện tại và các sách liên quan (cho ComboBox)
+    private void loadBookForComboBox(String maPM, String maSachHienTai) {
         cmbMaSach.removeAllItems();
+        
+        // Dùng hàm tra cứu cũ (vì nó trả về LoanDetail, tiện cho ComboBox)
+        List<LoanDetail> relatedBooks = getLoanDetailsFromDB(maPM);
 
-        List<LoanDetail> results = getLoanDetailsFromDB(maPhieuMuon); // <-- Dùng hàm truy vấn DB thật
-
-        if (results.isEmpty()) {
-            JOptionPane.showMessageDialog(this, "Không tìm thấy Phiếu mượn: " + maPhieuMuon + " hoặc phiếu không có chi tiết mượn.", "Lỗi Tra Cứu", JOptionPane.WARNING_MESSAGE);
+        if (relatedBooks.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "Cảnh báo: Không tìm thấy sách nào cho Phiếu mượn này.", "Cảnh báo", JOptionPane.WARNING_MESSAGE);
             return;
         }
 
-        String maNguoiDoc = results.get(0).maNguoiDoc;
-        txtMaNguoiDoc.setText(maNguoiDoc);
-        
-        for (LoanDetail detail : results) {
-            cmbMaSach.addItem(detail);
-        }
-        
-        String message;
-        if (results.size() == 1) {
-            LoanDetail singleBook = results.get(0);
-            if (!singleBook.tinhTrangSach.equalsIgnoreCase("Tốt") && !singleBook.tinhTrangSach.equalsIgnoreCase("Bình thường")) {
-                txtLyDo.setText(String.format("Sách '%s' bị phạt do trả sách trong tình trạng: %s", singleBook.tenSach, singleBook.tinhTrangSach));
+        int selectedIndex = -1;
+        for (int i = 0; i < relatedBooks.size(); i++) {
+            cmbMaSach.addItem(relatedBooks.get(i));
+            if (relatedBooks.get(i).maSach.equals(maSachHienTai)) {
+                selectedIndex = i;
             }
-             message = String.format("Đã tải thông tin cho Mã người đọc '%s' và Mã sách '%s'.", maNguoiDoc, singleBook.maSach);
-        } else {
-            message = String.format("Đã tải thông tin cho Mã người đọc '%s' và %d cuốn sách.\nVui lòng CHỌN SÁCH cần phạt.", maNguoiDoc, results.size());
         }
-
-
-        JOptionPane.showMessageDialog(this, message, "Tra Cứu Thành Công", JOptionPane.INFORMATION_MESSAGE);
+        
+        if (selectedIndex != -1) {
+            cmbMaSach.setSelectedIndex(selectedIndex);
+        }
     }
 
-    /**
-     * THỰC HIỆN TRUY VẤN DB THẬT: Lấy chi tiết mượn, sách và người đọc theo Mã phiếu mượn.
-     */
+
+    // ====== TRUY VẤN DB THẬT (Load Penalty Data) ======
+    private PenaltyData getPenaltyDataFromDB(String maPP) {
+        String sql = "SELECT ma_phieu_muon, ma_sach, ma_nguoi_doc, ly_do_phat, so_tien_phat, ngay_lap FROM phieuphat WHERE ma_phieu_phat = ?";
+        try (Connection conn = MySQLConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, maPP);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    Timestamp ts = rs.getTimestamp("ngay_lap");
+                    LocalDateTime ngayLap = ts != null ? ts.toLocalDateTime() : null;
+                    
+                    return new PenaltyData(
+                        rs.getString("ma_phieu_muon"),
+                        rs.getString("ma_sach"),
+                        rs.getString("ma_nguoi_doc"),
+                        rs.getString("ly_do_phat"),
+                        rs.getDouble("so_tien_phat"),
+                        ngayLap
+                    );
+                }
+            }
+        } catch (SQLException e) {
+            JOptionPane.showMessageDialog(this, "Lỗi truy vấn CSDL (Tải Phiếu Phạt): " + e.getMessage(), "Lỗi DB", JOptionPane.ERROR_MESSAGE);
+        }
+        return null;
+    }
+    
+    // ====== TRUY VẤN DB THẬT (Load Loan Details) ======
     private List<LoanDetail> getLoanDetailsFromDB(String maPhieuMuon) {
         List<LoanDetail> results = new ArrayList<>();
-        // Câu lệnh SQL lấy chi tiết phiếu mượn (JOIN phieumuon, chitietmuon, sach)
         String sql = "SELECT pm.ma_nguoi_doc, ctm.ma_sach, s.ten_sach, ctm.tinh_trang_sach " +
                      "FROM phieumuon pm " +
                      "JOIN chitietmuon ctm ON pm.ma_phieu_muon = ctm.ma_phieu_muon " +
@@ -278,7 +375,49 @@ public class PenaltyForm extends JFrame {
 
 
     // ===============================================
-    //               LOGIC CRUD VÀ TẠO ID MỚI
+    //               LOGIC TRA CỨU (LOOKUP) - Ở CHẾ ĐỘ THÊM
+    // ===============================================
+
+    /**
+     * Tra cứu thông tin Phiếu Mượn và Chi Tiết Mượn từ Database THẬT
+     */
+    private void lookupLoanDetails(String maPhieuMuon) {
+        txtMaNguoiDoc.setText("");
+        txtLyDo.setText("");
+        cmbMaSach.removeAllItems();
+
+        List<LoanDetail> results = getLoanDetailsFromDB(maPhieuMuon);
+
+        if (results.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "Không tìm thấy Phiếu mượn: " + maPhieuMuon + " hoặc phiếu không có chi tiết mượn.", "Lỗi Tra Cứu", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        String maNguoiDoc = results.get(0).maNguoiDoc;
+        txtMaNguoiDoc.setText(maNguoiDoc);
+        
+        for (LoanDetail detail : results) {
+            cmbMaSach.addItem(detail);
+        }
+        
+        String message;
+        if (results.size() == 1) {
+            LoanDetail singleBook = results.get(0);
+            if (!singleBook.tinhTrangSach.equalsIgnoreCase("Tốt") && !singleBook.tinhTrangSach.equalsIgnoreCase("Bình thường")) {
+                txtLyDo.setText(String.format("Sách '%s' bị phạt do trả sách trong tình trạng: %s", singleBook.tenSach, singleBook.tinhTrangSach));
+            }
+             message = String.format("Đã tải thông tin cho Mã người đọc '%s' và Mã sách '%s'.", maNguoiDoc, singleBook.maSach);
+        } else {
+            message = String.format("Đã tải thông tin cho Mã người đọc '%s' và %d cuốn sách.\nVui lòng CHỌN SÁCH cần phạt.", maNguoiDoc, results.size());
+        }
+
+
+        JOptionPane.showMessageDialog(this, message, "Tra Cứu Thành Công", JOptionPane.INFORMATION_MESSAGE);
+    }
+
+
+    // ===============================================
+    //               LOGIC CRUD (Dùng DB thật)
     // ===============================================
     
     private void themPhieuPhat() {
@@ -292,7 +431,6 @@ public class PenaltyForm extends JFrame {
             return;
         }
         
-        // Bắt đầu dùng kết nối DB thật
         try (Connection conn = MySQLConnection.getConnection()) {
             String sql = "INSERT INTO phieuphat (ma_phieu_phat, ma_phieu_muon, ma_sach, ma_nguoi_doc, ly_do_phat, so_tien_phat, ngay_lap) VALUES (?, ?, ?, ?, ?, ?, NOW())";
             PreparedStatement ps = conn.prepareStatement(sql);
@@ -316,17 +454,17 @@ public class PenaltyForm extends JFrame {
     }
 
     private void suaPhieuPhat() {
-        if (txtMaPhieuPhat.getText().isEmpty()) {
-            JOptionPane.showMessageDialog(this, "Vui lòng nhập Mã phiếu phạt cần cập nhật.");
-            return;
+        if (!isEditDeleteMode() || txtMaPhieuPhat.getText().isEmpty() || !txtMaPhieuMuon.isEditable()) {
+             JOptionPane.showMessageDialog(this, "Vui lòng nhập Mã phiếu phạt và tải dữ liệu trước khi Cập nhật.");
+             return;
         }
+        
         LoanDetail selectedItem = (LoanDetail) cmbMaSach.getSelectedItem();
         if (selectedItem == null) {
             JOptionPane.showMessageDialog(this, "Vui lòng chọn Mã sách cần cập nhật.", "Lỗi Thiếu Thông Tin", JOptionPane.ERROR_MESSAGE);
             return;
         }
         
-        // Bắt đầu dùng kết nối DB thật
         try (Connection conn = MySQLConnection.getConnection()) {
             String sql = "UPDATE phieuphat SET ma_phieu_muon=?, ma_sach=?, ma_nguoi_doc=?, ly_do_phat=?, so_tien_phat=? WHERE ma_phieu_phat=?";
             PreparedStatement ps = conn.prepareStatement(sql);
@@ -338,8 +476,14 @@ public class PenaltyForm extends JFrame {
             ps.setDouble(5, Double.parseDouble(txtSoTienPhat.getText()));
             ps.setString(6, txtMaPhieuPhat.getText());
 
-            ps.executeUpdate();
-            JOptionPane.showMessageDialog(this, "✔ Cập nhật phiếu phạt thành công!");
+            int rowsAffected = ps.executeUpdate();
+            
+            if (rowsAffected > 0) {
+                 JOptionPane.showMessageDialog(this, "✔ Cập nhật phiếu phạt thành công!");
+            } else {
+                 JOptionPane.showMessageDialog(this, "Không tìm thấy Mã phiếu phạt để cập nhật.", "Cảnh báo", JOptionPane.WARNING_MESSAGE);
+            }
+            
             setAddMode();
         } catch (SQLException ex) {
             JOptionPane.showMessageDialog(this, "❌ Lỗi khi cập nhật: " + ex.getMessage());
@@ -349,25 +493,25 @@ public class PenaltyForm extends JFrame {
     }
 
     private void xoaPhieuPhat() {
-        if (txtMaPhieuPhat.getText().isEmpty()) {
+        if (!isEditDeleteMode() || txtMaPhieuPhat.getText().isEmpty()) {
             JOptionPane.showMessageDialog(this, "Vui lòng nhập Mã phiếu phạt cần xóa.");
             return;
         }
+        
         int confirm = JOptionPane.showConfirmDialog(this, "Bạn có chắc chắn muốn xóa phiếu phạt ID: " + txtMaPhieuPhat.getText() + "?", "Xác nhận Xóa", JOptionPane.YES_NO_OPTION);
         
         if (confirm == JOptionPane.YES_OPTION) {
-            // Bắt đầu dùng kết nối DB thật
             try (Connection conn = MySQLConnection.getConnection()) {
                 String sql = "DELETE FROM phieuphat WHERE ma_phieu_phat=?";
                 PreparedStatement ps = conn.prepareStatement(sql);
                 ps.setString(1, txtMaPhieuPhat.getText());
 
                 int rowsAffected = ps.executeUpdate();
-
+                
                 if (rowsAffected > 0) {
                     JOptionPane.showMessageDialog(this, "🗑️ Xóa thành công!");
                 } else {
-                    JOptionPane.showMessageDialog(this, "Không tìm thấy Mã phiếu phạt để xóa.", "Lỗi Xóa", JOptionPane.WARNING_MESSAGE);
+                     JOptionPane.showMessageDialog(this, "Không tìm thấy Mã phiếu phạt để xóa.", "Cảnh báo", JOptionPane.WARNING_MESSAGE);
                 }
                 setAddMode();
 
@@ -377,35 +521,26 @@ public class PenaltyForm extends JFrame {
         }
     }
     
-    /**
-     * Lấy ID nhỏ nhất bị thiếu (Gap) hoặc ID lớn nhất + 1.
-     */
+    // Lấy ID nhỏ nhất bị thiếu (Gap) hoặc ID lớn nhất + 1.
     private void generatePenaltyID() {
         // Tái sử dụng Mã ID bị xóa (Gap filling)
         int nextID = 1;
         try (Connection conn = MySQLConnection.getConnection()) {
             
-            // 1. KIỂM TRA ĐỘC LẬP: PP001 có bị thiếu không? (Thủ thuật cho gap đầu tiên)
             String check1Sql = "SELECT ma_phieu_phat FROM phieuphat WHERE ma_phieu_phat = 'PP001'";
             try (PreparedStatement ps = conn.prepareStatement(check1Sql); ResultSet rs = ps.executeQuery()) {
                 if (!rs.next()) {
-                    // PP001 bị thiếu. Điền ngay PP001.
                     txtMaPhieuPhat.setText("PP001");
                     return; 
                 }
             }
             
-            // 2. TÌM GAP KHÁC HOẶC MAX + 1 (áp dụng nếu PP001 đã tồn tại)
-            
-            // Truy vấn tìm ID nhỏ nhất bị thiếu (Gap > 1)
             String gapSql = "SELECT MIN(t1.id) + 1 AS next_id FROM (SELECT CAST(SUBSTRING(ma_phieu_phat, 3) AS UNSIGNED) AS id FROM phieuphat) t1 " +
                                      "LEFT JOIN (SELECT CAST(SUBSTRING(ma_phieu_phat, 3) AS UNSIGNED) AS id FROM phieuphat) t2 ON t1.id + 1 = t2.id " +
                                      "WHERE t2.id IS NULL AND t1.id >= 1"; 
             
-            // Truy vấn tìm MAX ID
             String maxSql = "SELECT MAX(CAST(SUBSTRING(ma_phieu_phat, 3) AS UNSIGNED)) AS max_id FROM phieuphat";
 
-            // Tìm GAP > 1
             try (Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery(gapSql)) {
                 if (rs.next()) {
                     int gapId = rs.getInt("next_id");
@@ -415,7 +550,6 @@ public class PenaltyForm extends JFrame {
                 }
             }
             
-            // Nếu không tìm thấy gap, lấy MAX ID + 1
             if (nextID == 1) {
                  try (Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery(maxSql)) {
                     if (rs.next()) {
@@ -430,9 +564,8 @@ public class PenaltyForm extends JFrame {
             txtMaPhieuPhat.setText("PP" + String.format("%03d", nextID));
 
         } catch (SQLException e) {
-             // Trường hợp dự phòng nếu kết nối lỗi (kết nối thất bại ngay từ đầu)
-             txtMaPhieuPhat.setText("PP001");
-             System.err.println("Lỗi tự động sinh ID: " + e.getMessage());
+            txtMaPhieuPhat.setText("PP001");
+            System.err.println("Lỗi tự động sinh ID: " + e.getMessage());
         }
     }
 
