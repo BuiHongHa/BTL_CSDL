@@ -97,20 +97,6 @@ CREATE TABLE checkin (
 CREATE INDEX idx_pm_ma_nguoi_doc ON phieumuon(ma_nguoi_doc);
 CREATE INDEX idx_ctm_ma_sach ON chitietmuon(ma_sach);
 CREATE INDEX idx_pp_ma_nguoi_doc ON phieuphat(ma_nguoi_doc);
-SELECT
-    pm.ma_nguoi_doc,
-    ctm.ma_sach,
-    s.ten_sach,
-    ctm.tinh_trang_sach
-FROM
-    phieumuon pm
-JOIN
-    chitietmuon ctm ON pm.ma_phieu_muon = ctm.ma_phieu_muon
-JOIN
-    sach s ON ctm.ma_sach = s.ma_sach
-WHERE
-    pm.ma_phieu_muon = 'PM_USER_INPUT';
-
 INSERT INTO nhanvien (ma_nhan_vien, ho_ten, chuc_vu, so_dien_thoai) VALUES
 ('NV001', 'Nguyễn Văn A', 'Thủ kho', '0901123456'),
 ('NV002', 'Lê Thị B', 'Quản lý', '0912234567'),
@@ -145,15 +131,15 @@ INSERT INTO phieumuon (ma_phieu_muon, ma_nguoi_doc, ma_nhan_vien, ngay_muon, nga
 
 -- 5. Bảng chitietmuon (Chi Tiết Mượn)
 INSERT INTO chitietmuon (ma_phieu_muon, ma_sach, ngay_muon, tinh_trang_sach) VALUES
-('PM001', 'S001', '2025-11-01', 'Tốt'),
-('PM001', 'S002', '2025-11-01', 'Tốt'),
-('PM002', 'S003', '2025-11-05', 'Bình thường'), -- Sách đang mượn
-('PM003', 'S004', '2025-10-20', 'Hư hỏng nhẹ'); -- Sách trả trễ + hỏng
+('PM001', 'S001', '2025-11-01', 'Đang mượn'),
+('PM001', 'S002', '2025-11-01', 'Đang mượn'),
+('PM002', 'S003', '2025-11-05', 'Đang mượn'), -- Sách đang mượn
+('PM003', 'S004', '2025-10-20', 'Đang mượn'); -- Sách trả trễ + hỏng
 
 -- 6. Bảng phieuphat (Phiếu Phạt)
 -- Phạt cho PM003 (ND004) vì trả trễ S004 và làm hỏng sách
 INSERT INTO phieuphat (ma_phieu_phat, ma_phieu_muon, ma_sach, ma_nguoi_doc, ly_do_phat, so_tien_phat, ngay_lap) VALUES
-('PP001', 'PM003', 'S004', 'ND004', 'Trả sách trễ 5 ngày và sách bị rách bìa.', 50000.00, '2025-11-15 10:30:00');
+('PP001', 'PM003', 'S004', 'ND004', 'Trả sách trễ 5 ngày và sách bị rách bìa.', 50000, '2025-11-15 10:30:00');
 
 -- 7. Bảng checkin (Phiếu Gửi/Yêu Cầu Check-in)
 -- ND005 yêu cầu kiểm tra tình trạng sách
