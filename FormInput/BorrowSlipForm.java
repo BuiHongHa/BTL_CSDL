@@ -2,26 +2,29 @@ package SQL;
 
 import java.awt.*;
 import javax.swing.*;
+import javax.swing.table.DefaultTableModel;
+import java.awt.event.*;
 import java.sql.*;
 import java.time.LocalDate;
-import javax.swing.table.DefaultTableModel;
-import java.awt.event.FocusAdapter;
-import java.awt.event.FocusEvent;
+import java.util.ArrayList;
+import java.util.List;
 
 public class BorrowSlipForm extends JFrame {
     private JTextField txtMaPhieuMuon, txtMaNguoiDoc, txtMaNhanVien, txtNgayMuon, txtNgayTra;
     private JButton btnAdd, btnUpdate, btnDelete, btnClear, btnExport;
-    private JLabel lblMaSach; 
-    private JTextField txtMaSachMuon; 
-    private JButton btnAddBook; 
     
-    // Khai báo listener để kiểm soát việc tải dữ liệu
+    // Thay ComboBox bằng TextField hiển thị sách đã chọn và nút mở Dialog tìm kiếm
+    private JTextField txtSachDaChon; 
+    private String selectedMaSach = null; // Lưu mã sách đã chọn từ Dialog
+    private JButton btnSelectBook; // Nút mở Dialog chọn sách
+    private JButton btnAddBook; // Nút thêm sách vào phiếu
+    
     private java.awt.event.FocusAdapter focusListener; 
 
     public BorrowSlipForm() {
         setTitle("📖 Tạo Phiếu Mượn Sách");
-        setSize(550, 450); 
-        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        setSize(600, 500); // Tăng kích thước một chút
+        setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
         setLocationRelativeTo(null);
 
         // ======= FORM NHẬP (GridLayout 6x2) =======
@@ -42,25 +45,37 @@ public class BorrowSlipForm extends JFrame {
 
         formPanel.add(new JLabel("Ngày mượn (YYYY-MM-DD):"));
         txtNgayMuon = new JTextField();
-        txtNgayMuon.setEditable(false); // Ngày mượn không cho phép sửa
+        txtNgayMuon.setEditable(false); 
         formPanel.add(txtNgayMuon);
 
         formPanel.add(new JLabel("Ngày trả (YYYY-MM-DD):"));
         txtNgayTra = new JTextField();
         formPanel.add(txtNgayTra);
         
-        // --- Ô NHẬP SÁCH VÀ NÚT THÊM SÁCH ---
-        lblMaSach = new JLabel("Mã sách mượn:");
-        txtMaSachMuon = new JTextField();
-        btnAddBook = new JButton("📝 Thêm sách vào phiếu");
+        // --- HÀNG CUỐI: CHỌN SÁCH THÔNG MINH ---
+        formPanel.add(new JLabel("Sách muốn mượn:"));
+        
+        JPanel bookSelectionPanel = new JPanel(new BorderLayout(5, 0));
+        
+        txtSachDaChon = new JTextField();
+        txtSachDaChon.setEditable(false); // Không cho nhập tay, phải chọn
+        txtSachDaChon.setBackground(Color.WHITE);
+        
+        btnSelectBook = new JButton("🔍 Tìm & Chọn");
+        btnSelectBook.addActionListener(e -> openBookSelectionDialog());
+        
+        btnAddBook = new JButton("📝 Thêm vào phiếu");
         btnAddBook.setBackground(new Color(173, 216, 230));
+        btnAddBook.addActionListener(e -> addBookToBorrowSlip());
 
-        JPanel bookPanel = new JPanel(new BorderLayout(5, 0));
-        bookPanel.add(txtMaSachMuon, BorderLayout.CENTER);
-        bookPanel.add(btnAddBook, BorderLayout.EAST);
+        JPanel actionBookPanel = new JPanel(new GridLayout(1, 2, 5, 0));
+        actionBookPanel.add(btnSelectBook);
+        actionBookPanel.add(btnAddBook);
+        
+        bookSelectionPanel.add(txtSachDaChon, BorderLayout.CENTER);
+        bookSelectionPanel.add(actionBookPanel, BorderLayout.EAST);
 
-        formPanel.add(lblMaSach);
-        formPanel.add(bookPanel);
+        formPanel.add(bookSelectionPanel); 
 
         // Khóa các trường sách và nút thêm sách mặc định
         setBookInputEnabled(false);
@@ -68,7 +83,7 @@ public class BorrowSlipForm extends JFrame {
         // ======= PANEL NÚT =======
         JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 10, 10));
 
-        btnAdd = new JButton("➕ Thêm");
+        btnAdd = new JButton("➕ Thêm Phiếu Mượn");
         btnUpdate = new JButton("✏️ Sửa");
         btnDelete = new JButton("🗑️ Xóa");
         btnClear = new JButton("🔄 Làm mới");
@@ -88,7 +103,6 @@ public class BorrowSlipForm extends JFrame {
         // ======= EVENT HANDLERS =======
         btnAdd.addActionListener(e -> addBorrowSlip());
         btnClear.addActionListener(e -> setAddMode()); 
-        btnAddBook.addActionListener(e -> addBookToBorrowSlip()); 
         btnExport.addActionListener(e -> JOptionPane.showMessageDialog(this, "Chức năng xem danh sách sẽ được tải từ form quản lý danh sách phiếu mượn.")); 
         
         btnUpdate.addActionListener(e -> {
@@ -110,14 +124,92 @@ public class BorrowSlipForm extends JFrame {
         setAddMode(); 
     }
     
+    // ====== HỘP THOẠI TÌM KIẾM VÀ CHỌN SÁCH ======
+    private void openBookSelectionDialog() {
+        JDialog dialog = new JDialog(this, "🔍 Tìm kiếm và Chọn Sách", true);
+        dialog.setSize(600, 400);
+        dialog.setLocationRelativeTo(this);
+        dialog.setLayout(new BorderLayout(10, 10));
+        
+        // Panel Tìm kiếm
+        JPanel searchPanel = new JPanel(new FlowLayout());
+        JTextField txtSearch = new JTextField(30);
+        JButton btnSearch = new JButton("Tìm kiếm");
+        searchPanel.add(new JLabel("Nhập tên hoặc mã sách:"));
+        searchPanel.add(txtSearch);
+        searchPanel.add(btnSearch);
+        
+        // Bảng kết quả
+        String[] columnNames = {"Mã sách", "Tên sách", "Tác giả", "Năm XB"};
+        DefaultTableModel model = new DefaultTableModel(columnNames, 0);
+        JTable table = new JTable(model);
+        JScrollPane scrollPane = new JScrollPane(table);
+        
+        // Nút Chọn
+        JButton btnConfirm = new JButton("✅ Chọn sách này");
+        btnConfirm.setEnabled(false);
+        JPanel bottomPanel = new JPanel();
+        bottomPanel.add(btnConfirm);
+        
+        // Sự kiện Tìm kiếm
+        ActionListener searchAction = e -> {
+            String keyword = txtSearch.getText().trim();
+            model.setRowCount(0); // Xóa dữ liệu cũ
+            try (Connection conn = MySQLConnection.getConnection()) {
+                String sql = "SELECT ma_sach, ten_sach, tac_gia, nam_xuat_ban FROM sach WHERE ten_sach LIKE ? OR ma_sach LIKE ?";
+                PreparedStatement ps = conn.prepareStatement(sql);
+                ps.setString(1, "%" + keyword + "%");
+                ps.setString(2, "%" + keyword + "%");
+                ResultSet rs = ps.executeQuery();
+                while (rs.next()) {
+                    model.addRow(new Object[]{
+                        rs.getString("ma_sach"),
+                        rs.getString("ten_sach"),
+                        rs.getString("tac_gia"),
+                        rs.getInt("nam_xuat_ban")
+                    });
+                }
+            } catch (SQLException ex) {
+                ex.printStackTrace();
+            }
+        };
+        
+        btnSearch.addActionListener(searchAction);
+        txtSearch.addActionListener(searchAction); // Cho phép nhấn Enter để tìm
+        
+        // Sự kiện chọn dòng trong bảng
+        table.getSelectionModel().addListSelectionListener(e -> {
+            btnConfirm.setEnabled(table.getSelectedRow() != -1);
+        });
+        
+        // Sự kiện Xác nhận chọn
+        btnConfirm.addActionListener(e -> {
+            int row = table.getSelectedRow();
+            if (row != -1) {
+                selectedMaSach = (String) model.getValueAt(row, 0);
+                String tenSach = (String) model.getValueAt(row, 1);
+                txtSachDaChon.setText(selectedMaSach + " - " + tenSach);
+                dialog.dispose();
+            }
+        });
+        
+        // Tải dữ liệu ban đầu (tất cả sách)
+        searchAction.actionPerformed(null);
+        
+        dialog.add(searchPanel, BorderLayout.NORTH);
+        dialog.add(scrollPane, BorderLayout.CENTER);
+        dialog.add(bottomPanel, BorderLayout.SOUTH);
+        dialog.setVisible(true);
+    }
+
+
     // Bật/Tắt khả năng nhập sách
     private void setBookInputEnabled(boolean enabled) {
-        lblMaSach.setEnabled(enabled);
-        txtMaSachMuon.setEnabled(enabled); 
-        txtMaSachMuon.setEditable(enabled); 
+        btnSelectBook.setEnabled(enabled);
         btnAddBook.setEnabled(enabled);
         if (!enabled) {
-            txtMaSachMuon.setText("");
+            txtSachDaChon.setText("");
+            selectedMaSach = null;
         }
     }
 
@@ -166,7 +258,7 @@ public class BorrowSlipForm extends JFrame {
         txtMaNhanVien.setEditable(true);
         txtNgayTra.setEditable(true);
         
-        removeFocusListenerForLoad(); // Đảm bảo listener không chạy ở chế độ Thêm
+        removeFocusListenerForLoad(); 
     }
 
     private void setEditDeleteMode() {
@@ -198,10 +290,25 @@ public class BorrowSlipForm extends JFrame {
         txtMaNhanVien.setText("");
         txtNgayMuon.setText("");
         txtNgayTra.setText("");
-        txtMaSachMuon.setText("");
+        txtSachDaChon.setText("");
+        selectedMaSach = null;
     }
     
-    // ====== TẢI DỮ LIỆU PHIẾU MƯỢN ĐỂ SỬA ======
+    // ====== HÀM XÓA CHI TIẾT CŨ TRONG DB ======
+    private void deleteOldDetails(String maPM) {
+        String sql = "DELETE FROM chitietmuon WHERE ma_phieu_muon = ?";
+        try (Connection conn = MySQLConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, maPM);
+            ps.executeUpdate();
+            // Không cần thông báo thành công, chỉ cần chạy ngầm
+        } catch (SQLException e) {
+            // Trường hợp lỗi khóa ngoại (nếu có bảng khác trỏ vào CTM)
+            JOptionPane.showMessageDialog(this, "Cảnh báo: Không thể xóa chi tiết mượn cũ. Kiểm tra các bảng phụ thuộc.\n" + e.getMessage(), "Lỗi Xóa Chi Tiết", JOptionPane.WARNING_MESSAGE);
+        }
+    }
+    
+    // ====== TẢI DỮ LIỆU PHIẾU MƯỢN ĐỂ SỬA (VÀ BẬT CHỨC NĂNG THÊM SÁCH) ======
     private void loadBorrowSlipData(String maPM) {
         if (maPM.isEmpty()) return;
 
@@ -212,18 +319,25 @@ public class BorrowSlipForm extends JFrame {
             ResultSet rs = stmt.executeQuery();
 
             if (rs.next()) {
+                // 1. Tải thông tin Header
                 txtMaNguoiDoc.setText(rs.getString("ma_nguoi_doc"));
                 txtMaNhanVien.setText(rs.getString("ma_nhan_vien"));
                 txtNgayMuon.setText(rs.getDate("ngay_muon").toString()); 
-                Date ngayTra = rs.getDate("ngay_tra");
+                java.sql.Date ngayTra = rs.getDate("ngay_tra");
                 txtNgayTra.setText(ngayTra != null ? ngayTra.toString() : "");
                 
-                // Bật chỉnh sửa cho các trường dữ liệu cần thiết
+                // 2. XÓA TẤT CẢ CHI TIẾT SÁCH CŨ LIÊN QUAN TRONG DB
+                deleteOldDetails(maPM); 
+                
+                // 3. Bật chỉnh sửa cho các trường dữ liệu cần thiết
                 txtMaNguoiDoc.setEditable(true);
                 txtMaNhanVien.setEditable(true);
                 txtNgayTra.setEditable(true);
                 
-                JOptionPane.showMessageDialog(this, "✅ Đã tải thông tin phiếu mượn " + maPM + ". Bạn có thể chỉnh sửa.");
+                // 4. BẬT CHỨC NĂNG THÊM SÁCH MỚI
+                setBookInputEnabled(true); 
+                
+                JOptionPane.showMessageDialog(this, "✅ Đã tải phiếu mượn " + maPM + ". Chi tiết sách cũ đã được xóa. Vui lòng chọn và thêm sách mới.", "Thành Công", JOptionPane.INFORMATION_MESSAGE);
 
             } else {
                 // Xóa các trường dữ liệu nếu không tìm thấy
@@ -263,18 +377,6 @@ public class BorrowSlipForm extends JFrame {
             }
         }
     }
-    
-    private boolean isSachExists(String maSach) throws SQLException {
-        String sql = "SELECT ma_sach FROM sach WHERE ma_sach = ?";
-        try (Connection conn = MySQLConnection.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, maSach);
-            try (ResultSet rs = ps.executeQuery()) {
-                return rs.next();
-            }
-        }
-    }
-
 
     // ======= CRUD FUNCTIONS =======
     private void addBorrowSlip() {
@@ -311,47 +413,53 @@ public class BorrowSlipForm extends JFrame {
             stmt.setString(1, txtMaPhieuMuon.getText());
             stmt.setString(2, maND);
             stmt.setString(3, maNV);
-            stmt.setDate(4, Date.valueOf(txtNgayMuon.getText()));
+            
+            // FIX LỖI: Sử dụng java.sql.Date.valueOf(String)
+            try {
+                 stmt.setDate(4, java.sql.Date.valueOf(txtNgayMuon.getText()));
+            } catch (IllegalArgumentException e) {
+                 JOptionPane.showMessageDialog(this, "❌ Lỗi định dạng ngày mượn: Ngày phải theo format YYYY-MM-DD.", "Lỗi Định dạng", JOptionPane.ERROR_MESSAGE);
+                 return;
+            }
             
             String ngayTraText = txtNgayTra.getText().trim();
             if (ngayTraText.isEmpty()) {
                 stmt.setNull(5, Types.DATE);
             } else {
-                stmt.setDate(5, Date.valueOf(ngayTraText));
+                // FIX LỖI: Sử dụng java.sql.Date.valueOf(String)
+                 try {
+                     stmt.setDate(5, java.sql.Date.valueOf(ngayTraText));
+                 } catch (IllegalArgumentException e) {
+                     JOptionPane.showMessageDialog(this, "❌ Lỗi định dạng ngày trả: Ngày phải theo format YYYY-MM-DD.", "Lỗi Định dạng", JOptionPane.ERROR_MESSAGE);
+                     return;
+                 }
             }
             stmt.executeUpdate();
 
-            JOptionPane.showMessageDialog(this, "✅ Thêm phiếu mượn thành công! Vui lòng thêm sách vào phiếu.", "Thành Công", JOptionPane.INFORMATION_MESSAGE);
+            JOptionPane.showMessageDialog(this, "✅ Thêm phiếu mượn thành công! Vui lòng chọn và thêm sách vào phiếu.", "Thành Công", JOptionPane.INFORMATION_MESSAGE);
             
             // --- KHÓA CHỨC NĂNG THÊM PHIẾU VÀ BẬT CHỨC NĂNG THÊM SÁCH ---
             btnAdd.setEnabled(false); 
             setBookInputEnabled(true);
-            txtMaSachMuon.requestFocus();
             
         } catch (SQLException ex) {
             JOptionPane.showMessageDialog(this, "❌ Lỗi thêm phiếu mượn: " + ex.getMessage());
-        } catch (IllegalArgumentException ex) {
-             JOptionPane.showMessageDialog(this, "❌ Lỗi định dạng ngày trả: Vui lòng nhập ngày trả theo format YYYY-MM-DD.");
         }
     }
     
     private void addBookToBorrowSlip() {
         String maPM = txtMaPhieuMuon.getText();
-        String maSach = txtMaSachMuon.getText().trim();
         
-        if (maSach.isEmpty()) {
-            JOptionPane.showMessageDialog(this, "Vui lòng nhập Mã sách cần mượn.", "Lỗi", JOptionPane.ERROR_MESSAGE);
+        if (selectedMaSach == null || selectedMaSach.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "Vui lòng nhấn 'Tìm & Chọn' để chọn sách trước.", "Lỗi", JOptionPane.ERROR_MESSAGE);
             return;
         }
-
-        try {
-            if (!isSachExists(maSach)) {
-                JOptionPane.showMessageDialog(this, "❌ Lỗi: Mã sách (" + maSach + ") không tồn tại trong thư viện.", "Lỗi Khóa Ngoại", JOptionPane.ERROR_MESSAGE);
-                return;
-            }
-        } catch (SQLException e) {
-             JOptionPane.showMessageDialog(this, "❌ Lỗi kiểm tra sách: " + e.getMessage(), "Lỗi DB", JOptionPane.ERROR_MESSAGE);
-             return;
+        
+        // Lấy ngày mượn từ trường Ngày Mượn (đã được điền ở chế độ Thêm/Sửa)
+        String ngayMuonText = txtNgayMuon.getText();
+        if (ngayMuonText.contains("Không đổi")) {
+            JOptionPane.showMessageDialog(this, "❌ Không thể thêm sách. Vui lòng tải lại dữ liệu phiếu mượn để có Ngày mượn hợp lệ.", "Lỗi Dữ liệu", JOptionPane.ERROR_MESSAGE);
+            return;
         }
         
         try (Connection conn = MySQLConnection.getConnection()) {
@@ -359,17 +467,31 @@ public class BorrowSlipForm extends JFrame {
             PreparedStatement stmt = conn.prepareStatement(sql);
             
             stmt.setString(1, maPM);
-            stmt.setString(2, maSach);
-            stmt.setDate(3, Date.valueOf(txtNgayMuon.getText()));
-            stmt.setString(4, "Tốt"); // Giả định sách luôn tốt khi mượn
-            stmt.executeUpdate();
+            stmt.setString(2, selectedMaSach);
             
-            JOptionPane.showMessageDialog(this, "✅ Đã thêm sách " + maSach + " vào phiếu mượn " + maPM + ". Tiếp tục thêm sách khác hoặc nhấn Làm mới.", "Thành Công", JOptionPane.INFORMATION_MESSAGE);
-            txtMaSachMuon.setText("");
-            txtMaSachMuon.requestFocus(); // Giữ focus để thêm sách khác
+            // FIX LỖI: Sử dụng java.sql.Date.valueOf(String)
+            stmt.setDate(3, java.sql.Date.valueOf(ngayMuonText)); 
+            
+            // Tình trạng Sách: "Đang mượn"
+            stmt.setString(4, "Đang mượn"); // <-- GÁN GIÁ TRỊ CỐ ĐỊNH THEO YÊU CẦU MỚI
+            
+            int rowsAffected = stmt.executeUpdate(); 
 
+            if (rowsAffected > 0) {
+                 JOptionPane.showMessageDialog(this, "✅ Đã thêm sách " + selectedMaSach + " vào phiếu mượn " + maPM + " với tình trạng: Đang mượn.", "Thành Công", JOptionPane.INFORMATION_MESSAGE);
+                 // Reset lựa chọn sách sau khi thêm thành công
+                 txtSachDaChon.setText("");
+                 selectedMaSach = null;
+            } else {
+                 JOptionPane.showMessageDialog(this, "❌ Thao tác thêm chi tiết mượn thất bại (Không có dòng nào được thêm).", "Lỗi DB", JOptionPane.ERROR_MESSAGE);
+            }
+            
+        } catch (SQLIntegrityConstraintViolationException ex) {
+            JOptionPane.showMessageDialog(this, "❌ Lỗi thêm chi tiết mượn: Mã sách (" + selectedMaSach + ") đã được thêm vào phiếu mượn này rồi.", "Lỗi Trùng Lặp", JOptionPane.ERROR_MESSAGE);
         } catch (SQLException ex) {
-            JOptionPane.showMessageDialog(this, "❌ Lỗi thêm chi tiết mượn: Mã sách này có thể đã được thêm vào phiếu mượn này rồi.\n" + ex.getMessage());
+            JOptionPane.showMessageDialog(this, "❌ Lỗi SQL khi thêm chi tiết mượn: " + ex.getMessage(), "Lỗi DB", JOptionPane.ERROR_MESSAGE);
+        } catch (IllegalArgumentException ex) {
+            JOptionPane.showMessageDialog(this, "❌ Lỗi định dạng ngày: Vui lòng kiểm tra lại định dạng ngày mượn.", "Lỗi", JOptionPane.ERROR_MESSAGE);
         }
     }
 
@@ -413,7 +535,13 @@ public class BorrowSlipForm extends JFrame {
             if (ngayTraText.isEmpty()) {
                 stmt.setNull(3, Types.DATE);
             } else {
-                stmt.setDate(3, Date.valueOf(ngayTraText));
+                // FIX LỖI: Sử dụng java.sql.Date.valueOf(String)
+                 try {
+                     stmt.setDate(3, java.sql.Date.valueOf(ngayTraText));
+                 } catch (IllegalArgumentException e) {
+                     JOptionPane.showMessageDialog(this, "❌ Lỗi định dạng ngày trả: Ngày phải theo format YYYY-MM-DD.", "Lỗi Định dạng", JOptionPane.ERROR_MESSAGE);
+                     return;
+                 }
             }
             
             stmt.setString(4, txtMaPhieuMuon.getText());
@@ -429,8 +557,6 @@ public class BorrowSlipForm extends JFrame {
             setAddMode();
         } catch (SQLException ex) {
             JOptionPane.showMessageDialog(this, "❌ Lỗi cập nhật: " + ex.getMessage());
-        } catch (IllegalArgumentException ex) {
-             JOptionPane.showMessageDialog(this, "❌ Lỗi định dạng ngày trả: Vui lòng nhập ngày trả theo format YYYY-MM-DD.");
         }
     }
 
@@ -513,7 +639,7 @@ public class BorrowSlipForm extends JFrame {
          JOptionPane.showMessageDialog(this, "Chức năng xem danh sách sẽ được tải từ form quản lý danh sách phiếu mượn.", "Xem Danh sách", JOptionPane.INFORMATION_MESSAGE);
     }
 
-    public static void main(String[] args) {
-        SwingUtilities.invokeLater(() -> new BorrowSlipForm().setVisible(true));
-    }
+//    public static void main(String[] args) {
+//        SwingUtilities.invokeLater(() -> new BorrowSlipForm().setVisible(true));
+//    }
 }
