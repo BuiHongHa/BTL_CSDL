@@ -10,7 +10,7 @@ public class CheckinForm extends JFrame {
     public CheckinForm() {
         setTitle("🪪 Gửi yêu cầu Check-in");
         setSize(450, 350); // Giảm chiều cao form
-        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
         setLocationRelativeTo(null);
         setLayout(new BorderLayout(10, 10));
 
@@ -165,7 +165,7 @@ public class CheckinForm extends JFrame {
         }
     }
 
-    public static void main(String[] args) {
-        new CheckinForm().setVisible(true);
-    }
+//    public static void main(String[] args) {
+//        new CheckinForm().setVisible(true);
+//    }
 }
