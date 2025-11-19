@@ -15,7 +15,7 @@ public class ReaderForm extends JFrame {
     public ReaderForm() {
         setTitle("📘 Quản lý Người Đọc");
         setSize(450, 350);
-        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
         setLocationRelativeTo(null);
 
         // ======= FORM NHẬP =======
@@ -332,7 +332,7 @@ public class ReaderForm extends JFrame {
     }
 
     // ====== MAIN ======
-    public static void main(String[] args) {
-        SwingUtilities.invokeLater(() -> new ReaderForm().setVisible(true));
-    }
+//    public static void main(String[] args) {
+//        SwingUtilities.invokeLater(() -> new ReaderForm().setVisible(true));
+//    }
 }
