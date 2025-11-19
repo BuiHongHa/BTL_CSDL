@@ -9,6 +9,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.sql.SQLIntegrityConstraintViolationException;
 
 // Lớp MySQLConnection sẽ được import và sử dụng từ file riêng của bạn.
 
@@ -37,7 +38,7 @@ public class PenaltyForm extends JFrame {
         @Override
         public String toString() {
             // Hiển thị cả mã và tên sách trong ComboBox
-            return maSach + " - " + tenSach + " (" + tinhTrangSach + ")";
+            return maSach + " - " + tenSach + " (TT cũ: " + tinhTrangSach + ")";
         }
     }
     
@@ -64,7 +65,7 @@ public class PenaltyForm extends JFrame {
     public PenaltyForm() {
         setTitle("📘 Quản lý Phiếu Phạt");
         setSize(500, 550);
-        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
         setLocationRelativeTo(null);
         setLayout(new BorderLayout(10, 10));
 
@@ -91,6 +92,7 @@ public class PenaltyForm extends JFrame {
 
         formPanel.add(new JLabel("Mã người đọc:"));
         txtMaNguoiDoc = new JTextField();
+        txtMaNguoiDoc.setEditable(false); // ID người đọc điền tự động
         formPanel.add(txtMaNguoiDoc);
 
         formPanel.add(new JLabel("Lý do phạt:"));
@@ -129,11 +131,11 @@ public class PenaltyForm extends JFrame {
         add(buttonPanel, BorderLayout.SOUTH);
 
         // --- LOGIC TRA CỨU TỰ ĐỘNG (FocusListener) ---
-        // Sẽ được kích hoạt khi ở chế độ Thêm
         txtMaPhieuMuon.addFocusListener(new FocusAdapter() {
             @Override
             public void focusLost(FocusEvent e) {
-                if (!isEditDeleteMode()) { // Chỉ chạy khi ở chế độ Thêm
+                // Chế độ Thêm: Tra cứu chi tiết phiếu mượn
+                if (!isEditDeleteMode()) { 
                     String maPM = txtMaPhieuMuon.getText().trim();
                     if (!maPM.isEmpty()) {
                         lookupLoanDetails(maPM); 
@@ -141,7 +143,8 @@ public class PenaltyForm extends JFrame {
                         txtMaNguoiDoc.setText("");
                         cmbMaSach.removeAllItems();
                     }
-                }
+                } 
+                // Chế độ Sửa/Xóa: Bỏ qua vì cần load từ MaPhieuPhat
             }
         });
         
@@ -204,9 +207,8 @@ public class PenaltyForm extends JFrame {
     private void setAddMode() {
         txtMaPhieuPhat.setEditable(false); 
         
-        // Mở khóa cho phép nhập tay Mã phiếu mượn/người đọc
         txtMaPhieuMuon.setEditable(true);
-        txtMaNguoiDoc.setEditable(false); // Mã người đọc vẫn khóa vì điền theo phiếu mượn
+        txtMaNguoiDoc.setEditable(false); 
         cmbMaSach.setEnabled(true);
         txtLyDo.setEditable(true);
         txtSoTienPhat.setEditable(true);
@@ -220,7 +222,7 @@ public class PenaltyForm extends JFrame {
         btnSua.setText("✏️ Sửa");
         btnXoa.setText("🗑️ Xóa");
         
-        removeFocusListenerForLoad(); // Đảm bảo listener tải dữ liệu không chạy ở chế độ Thêm
+        removeFocusListenerForLoad(); 
     }
 
     // ====== CHUYỂN CHẾ ĐỘ SỬA/XÓA ======
@@ -228,7 +230,6 @@ public class PenaltyForm extends JFrame {
         if (!isEditDeleteMode()) {
             txtMaPhieuPhat.setEditable(true); 
             
-            // Khóa tất cả các trường khác ID, buộc phải tải dữ liệu
             txtMaPhieuMuon.setEditable(false);
             txtMaNguoiDoc.setEditable(false);
             cmbMaSach.setEnabled(false);
@@ -346,6 +347,7 @@ public class PenaltyForm extends JFrame {
     // ====== TRUY VẤN DB THẬT (Load Loan Details) ======
     private List<LoanDetail> getLoanDetailsFromDB(String maPhieuMuon) {
         List<LoanDetail> results = new ArrayList<>();
+        // Truy vấn này cần lấy cả tình trạng sách hiện tại (để hiển thị)
         String sql = "SELECT pm.ma_nguoi_doc, ctm.ma_sach, s.ten_sach, ctm.tinh_trang_sach " +
                      "FROM phieumuon pm " +
                      "JOIN chitietmuon ctm ON pm.ma_phieu_muon = ctm.ma_phieu_muon " +
@@ -358,6 +360,7 @@ public class PenaltyForm extends JFrame {
             ps.setString(1, maPhieuMuon);
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
+                    // Dữ liệu ctm.tinh_trang_sach sẽ là "Đang mượn" hoặc Lý do phạt cũ
                     results.add(new LoanDetail(
                         rs.getString("ma_nguoi_doc"),
                         rs.getString("ma_sach"),
@@ -402,17 +405,28 @@ public class PenaltyForm extends JFrame {
         
         String message;
         if (results.size() == 1) {
-            LoanDetail singleBook = results.get(0);
-            if (!singleBook.tinhTrangSach.equalsIgnoreCase("Tốt") && !singleBook.tinhTrangSach.equalsIgnoreCase("Bình thường")) {
-                txtLyDo.setText(String.format("Sách '%s' bị phạt do trả sách trong tình trạng: %s", singleBook.tenSach, singleBook.tinhTrangSach));
-            }
-             message = String.format("Đã tải thông tin cho Mã người đọc '%s' và Mã sách '%s'.", maNguoiDoc, singleBook.maSach);
+            message = String.format("Đã tải thông tin cho Mã người đọc '%s' và Mã sách '%s'. Tình trạng hiện tại: %s", maNguoiDoc, results.get(0).maSach, results.get(0).tinhTrangSach);
         } else {
             message = String.format("Đã tải thông tin cho Mã người đọc '%s' và %d cuốn sách.\nVui lòng CHỌN SÁCH cần phạt.", maNguoiDoc, results.size());
         }
 
 
         JOptionPane.showMessageDialog(this, message, "Tra Cứu Thành Công", JOptionPane.INFORMATION_MESSAGE);
+    }
+    
+    /**
+     * Cập nhật tinh_trang_sach trong bảng chitietmuon bằng Lý do phạt.
+     */
+    private void updateChiTietMuonStatus(Connection conn, String maSach, String maPM, String lyDoPhat) {
+        String sql = "UPDATE chitietmuon SET tinh_trang_sach = ? WHERE ma_phieu_muon = ? AND ma_sach = ?";
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, lyDoPhat);
+            ps.setString(2, maPM);
+            ps.setString(3, maSach);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            JOptionPane.showMessageDialog(this, "Cảnh báo: Lỗi cập nhật tình trạng sách trong Chi Tiết Mượn.\n" + e.getMessage(), "Lỗi Nghiệp Vụ", JOptionPane.WARNING_MESSAGE);
+        }
     }
 
 
@@ -424,10 +438,12 @@ public class PenaltyForm extends JFrame {
         if (!btnThem.isEnabled()) return;
         
         LoanDetail selectedItem = (LoanDetail) cmbMaSach.getSelectedItem();
+        String maPM = txtMaPhieuMuon.getText();
+        String lyDo = txtLyDo.getText();
 
-        if (txtMaPhieuPhat.getText().isEmpty() || txtMaPhieuMuon.getText().isEmpty() || selectedItem == null || 
-            txtMaNguoiDoc.getText().isEmpty() || txtLyDo.getText().isEmpty() || txtSoTienPhat.getText().isEmpty()) {
-            JOptionPane.showMessageDialog(this, "Vui lòng điền đầy đủ thông tin và chọn Mã sách.");
+        if (txtMaPhieuPhat.getText().isEmpty() || maPM.isEmpty() || selectedItem == null || 
+            txtMaNguoiDoc.getText().isEmpty() || lyDo.isEmpty() || txtSoTienPhat.getText().isEmpty()) {
+            JOptionPane.showMessageDialog(this, "Vui lòng điền đầy đủ thông tin và chọn Mã sách.", "Lỗi Thiếu Thông Tin", JOptionPane.ERROR_MESSAGE);
             return;
         }
         
@@ -436,14 +452,17 @@ public class PenaltyForm extends JFrame {
             PreparedStatement ps = conn.prepareStatement(sql);
             
             ps.setString(1, txtMaPhieuPhat.getText());
-            ps.setString(2, txtMaPhieuMuon.getText());
+            ps.setString(2, maPM);
             ps.setString(3, selectedItem.maSach); 
             ps.setString(4, txtMaNguoiDoc.getText());
-            ps.setString(5, txtLyDo.getText());
+            ps.setString(5, lyDo);
             ps.setDouble(6, Double.parseDouble(txtSoTienPhat.getText()));
             ps.executeUpdate();
+            
+            // THAO TÁC MỚI: CẬP NHẬT TÌNH TRẠNG SÁCH TRONG CTM
+            updateChiTietMuonStatus(conn, selectedItem.maSach, maPM, lyDo);
 
-            JOptionPane.showMessageDialog(this, "✅ Thêm phiếu phạt thành công!");
+            JOptionPane.showMessageDialog(this, "✅ Thêm phiếu phạt thành công và cập nhật tình trạng sách!");
             setAddMode();
             
         } catch (SQLException ex) {
@@ -460,6 +479,9 @@ public class PenaltyForm extends JFrame {
         }
         
         LoanDetail selectedItem = (LoanDetail) cmbMaSach.getSelectedItem();
+        String maPM = txtMaPhieuMuon.getText();
+        String lyDo = txtLyDo.getText();
+
         if (selectedItem == null) {
             JOptionPane.showMessageDialog(this, "Vui lòng chọn Mã sách cần cập nhật.", "Lỗi Thiếu Thông Tin", JOptionPane.ERROR_MESSAGE);
             return;
@@ -469,17 +491,19 @@ public class PenaltyForm extends JFrame {
             String sql = "UPDATE phieuphat SET ma_phieu_muon=?, ma_sach=?, ma_nguoi_doc=?, ly_do_phat=?, so_tien_phat=? WHERE ma_phieu_phat=?";
             PreparedStatement ps = conn.prepareStatement(sql);
 
-            ps.setString(1, txtMaPhieuMuon.getText());
+            ps.setString(1, maPM);
             ps.setString(2, selectedItem.maSach); 
             ps.setString(3, txtMaNguoiDoc.getText());
-            ps.setString(4, txtLyDo.getText());
+            ps.setString(4, lyDo);
             ps.setDouble(5, Double.parseDouble(txtSoTienPhat.getText()));
             ps.setString(6, txtMaPhieuPhat.getText());
 
             int rowsAffected = ps.executeUpdate();
             
             if (rowsAffected > 0) {
-                 JOptionPane.showMessageDialog(this, "✔ Cập nhật phiếu phạt thành công!");
+                 // THAO TÁC MỚI: CẬP NHẬT TÌNH TRẠNG SÁCH TRONG CTM
+                 updateChiTietMuonStatus(conn, selectedItem.maSach, maPM, lyDo);
+                 JOptionPane.showMessageDialog(this, "✔ Cập nhật phiếu phạt thành công và cập nhật tình trạng sách!");
             } else {
                  JOptionPane.showMessageDialog(this, "Không tìm thấy Mã phiếu phạt để cập nhật.", "Cảnh báo", JOptionPane.WARNING_MESSAGE);
             }
@@ -502,6 +526,8 @@ public class PenaltyForm extends JFrame {
         
         if (confirm == JOptionPane.YES_OPTION) {
             try (Connection conn = MySQLConnection.getConnection()) {
+                // TẠM THỜI KHÔNG ĐẢO NGƯỢC TÌNH TRẠNG SÁCH (vì không có thông tin tình trạng cũ)
+                // Chỉ thực hiện xóa phiếu phạt
                 String sql = "DELETE FROM phieuphat WHERE ma_phieu_phat=?";
                 PreparedStatement ps = conn.prepareStatement(sql);
                 ps.setString(1, txtMaPhieuPhat.getText());
@@ -569,13 +595,13 @@ public class PenaltyForm extends JFrame {
         }
     }
 
-    public static void main(String[] args) {
-        // Đặt Look and Feel hệ thống cho giao diện đẹp hơn
-        try {
-            UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-        SwingUtilities.invokeLater(() -> new PenaltyForm().setVisible(true));
-    }
+//    public static void main(String[] args) {
+//        // Đặt Look and Feel hệ thống cho giao diện đẹp hơn
+//        try {
+//            UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
+//        } catch (Exception e) {
+//            e.printStackTrace();
+//        }
+//        SwingUtilities.invokeLater(() -> new PenaltyForm().setVisible(true));
+//    }
 }
